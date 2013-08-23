@@ -95,10 +95,6 @@ public class PhoneUtils {
     static final int AUDIO_RINGING = 1;  /** audio behaviour while ringing */
     static final int AUDIO_OFFHOOK = 2;  /** audio behaviour while in call. */
 
-    // USSD string length for MMI operations
-    static final int MIN_USSD_LEN = 1;
-    static final int MAX_USSD_LEN = 160;
-
     /** Speaker state, persisting between wired headset connection events */
     private static boolean sIsSpeakerEnabled = false;
 
@@ -233,6 +229,9 @@ public class PhoneUtils {
         final boolean phoneIsCdma = (phone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA);
         boolean answered = false;
         IBluetoothHeadsetPhone btPhone = null;
+
+        // enable noise suppression
+        turnOnNoiseSuppression(app.getApplicationContext(), true);
 
         if (phoneIsCdma) {
             // Stop any signalInfo tone being played when a Call waiting gets answered
@@ -1083,21 +1082,7 @@ public class PhoneUtils {
                         public void onClick(DialogInterface dialog, int whichButton) {
                             switch (whichButton) {
                                 case DialogInterface.BUTTON_POSITIVE:
-                                    // As per spec 24.080, valid length of ussd string
-                                    // is 1 - 160. If length is out of the range then
-                                    // display toast message & Cancel MMI operation.
-                                    if (inputText.length() < MIN_USSD_LEN
-                                            || inputText.length() > MAX_USSD_LEN) {
-                                        Toast.makeText(app,
-                                                app.getResources().getString(R.string.enter_input,
-                                                MIN_USSD_LEN, MAX_USSD_LEN),
-                                                Toast.LENGTH_LONG).show();
-                                        if (mmiCode.isCancelable()) {
-                                            mmiCode.cancel();
-                                        }
-                                    } else {
-                                        phone.sendUssdResponse(inputText.getText().toString());
-                                    }
+                                    phone.sendUssdResponse(inputText.getText().toString());
                                     break;
                                 case DialogInterface.BUTTON_NEGATIVE:
                                     if (mmiCode.isCancelable()) {
@@ -1856,8 +1841,7 @@ public class PhoneUtils {
         return audioManager.isSpeakerphoneOn();
     }
 
-
-    static void turnOnNoiseSuppression(Context context, boolean flag, boolean store) {
+    static void turnOnNoiseSuppression(Context context, boolean flag) {
         if (DBG) log("turnOnNoiseSuppression: " + flag);
         AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 
@@ -1865,47 +1849,31 @@ public class PhoneUtils {
             return;
         }
 
-        if (flag) {
-            audioManager.setParameters("noise_suppression=auto");
+        int nsp = android.provider.Settings.System.getInt(context.getContentResolver(),
+                                                              android.provider.Settings.System.NOISE_SUPPRESSION,
+                                                              1);
+
+        String aParam = context.getResources().getString(R.string.in_call_noise_suppression_audioparameter);
+        String[] aPValues = aParam.split("=");
+
+        if(aPValues[0].length() == 0) {
+            aPValues[0] = "noise_suppression";
+        }
+
+        if(aPValues[1].length() == 0) {
+            aPValues[1] = "on";
+        }
+
+        if(aPValues[2].length() == 0) {
+            aPValues[2] = "off";
+        }
+
+        if (nsp == 1 && flag) {
+            if (DBG) log("turnOnNoiseSuppression: " + aPValues[0] + "=" + aPValues[1]);
+            audioManager.setParameters(aPValues[0] + "=" + aPValues[1]);
         } else {
-            audioManager.setParameters("noise_suppression=off");
-        }
-
-        // record the speaker-enable value
-        if (store) {
-            sIsNoiseSuppressionEnabled = flag;
-        }
-
-        // TODO: implement and manage ICON
-
-    }
-
-    static void restoreNoiseSuppression(Context context) {
-        if (DBG) log("restoreNoiseSuppression, restoring to: " + sIsNoiseSuppressionEnabled);
-
-        if (!context.getResources().getBoolean(R.bool.has_in_call_noise_suppression)) {
-            return;
-        }
-
-        // change the mode if needed.
-        if (isNoiseSuppressionOn(context) != sIsNoiseSuppressionEnabled) {
-            turnOnNoiseSuppression(context, sIsNoiseSuppressionEnabled, false);
-        }
-    }
-
-    static boolean isNoiseSuppressionOn(Context context) {
-
-        if (!context.getResources().getBoolean(R.bool.has_in_call_noise_suppression)) {
-            return false;
-        }
-
-        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        String noiseSuppression = audioManager.getParameters("noise_suppression");
-        if (DBG) log("isNoiseSuppressionOn: " + noiseSuppression);
-        if (noiseSuppression.contains("off")) {
-            return false;
-        } else {
-            return true;
+            if (DBG) log("turnOnNoiseSuppression: " + aPValues[0] + "=" + aPValues[2]);
+            audioManager.setParameters(aPValues[0] + "=" + aPValues[2]);
         }
     }
 
